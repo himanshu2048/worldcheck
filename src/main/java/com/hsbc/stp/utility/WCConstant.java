@@ -16,7 +16,13 @@ public class WCConstant {
 	
 	public static final String CASE= "cases";
 	
+	public static final String UPDATE_CASE= "cases/";
+	
 	public static final String SCREENCASE= "cases/%s/screeningRequest";
 	
+	public static final String CASE_IDENTIFIERS="caseIdentifiers";
 	
+	public static final String CASE_REFERENCES="caseReferences";
+	
+	public static final String NOT_FOUND="Not Found";
 }
