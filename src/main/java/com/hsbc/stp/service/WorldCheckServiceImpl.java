@@ -21,11 +21,14 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -55,8 +58,8 @@ public class WorldCheckServiceImpl implements WorldCheckService {
 	private List<String> matchStrengthList = new ArrayList<>();
 
 	private SimpleDateFormat yearFormat = new SimpleDateFormat("yyyy");
-	
-	private String wcStatus="Clean";
+
+	private String wcStatus = "Clean";
 
 	WorldCheckServiceImpl() {
 		matchStrengthList.add("EXACT");
@@ -66,8 +69,8 @@ public class WorldCheckServiceImpl implements WorldCheckService {
 
 	@Override
 	public String getWCResultByCustomer(CustomerRequest customer) throws ParseException {
-		
-		WCScreening wcScreening= new WCScreening();
+
+		WCScreening wcScreening = new WCScreening();
 		wcScreening.setArn(customer.getArn());
 		wcScreening.setCustomerId(Integer.valueOf(customer.getCustomerId()));
 		wcScreening.setScreeningDate(new Date());
@@ -79,28 +82,59 @@ public class WorldCheckServiceImpl implements WorldCheckService {
 		int yearLowerRange = year - 3;
 		int yearUpperrange = year + 3;
 		String natinality = customer.getNationality();
-		String saveResult = saveCaseforCustomer(customer);
+		// String saveResult = saveCaseforCustomer(customer);
+		WcCustomer wcCustomer = new WcCustomer();
+		wcCustomer.setCaseId(customer.getCustomerId());
+		wcCustomer.setName(customer.getName());
+		wcCustomer.setEntityType("INDIVIDUAL");
+		wcCustomer.setGroupId("ba7f147f-cfbb-49c7-9e42-7ee9e5df62a8");
+		wcCustomer.setProviderTypes(new String[] { "WATCHLIST" });
+		wcCustomer.setCustomFields(new Field[] {});
+		DobField dobField = new DobField();
+		dobField.setTypeId("SFCT_2");
+		dobField.setDateTimeValue(customer.getDob());
+		NationalityField nationality = new NationalityField();
+		nationality.setTypeId("SFCT_5");
+		nationality.setValue("IND");
+		ObjectMapper mapper = new ObjectMapper();
+		wcCustomer.setSecondaryFields(new Field[] { dobField, nationality });
+		String json = "";
 		try {
+			json = mapper.writeValueAsString(wcCustomer);
+			System.out.println(json);
+
+			String caseIdentiResult = worldCheckCall(WCConstant.CASE_REFERENCES, HttpMethod.GET, "",
+					"?caseId=" + customer.getCustomerId());
+			String saveResult = "";
+			if (caseIdentiResult != null && caseIdentiResult.equalsIgnoreCase(WCConstant.NOT_FOUND))
+				saveResult = worldCheckCall(WCConstant.CASE, HttpMethod.POST, json, "");
+			else {
+				JSONObject responseCase = (JSONObject) parser.parse(caseIdentiResult);
+				String wcCaseid = (String) responseCase.get("caseSystemId");
+				String caseid = (String) responseCase.get("caseId");
+				System.out.println("for updating ==" + wcCaseid +" and case id ==" + caseid );
+				saveResult = worldCheckCall(WCConstant.UPDATE_CASE + wcCaseid, HttpMethod.PUT, json,"");
+			}
+
 			JSONObject responseCase = (JSONObject) parser.parse(saveResult);
 			String wcCaseid = (String) responseCase.get("caseSystemId");
-			String json = "";
+			String caseid = (String) responseCase.get("caseId");
+			System.out.println("for screening ==" + wcCaseid +" and case id ==" + caseid );
 			String url = String.format(WCConstant.SCREENCASE, wcCaseid);
-			ResponseEntity<String> result = worldCheckCall(url, HttpMethod.POST, json);// screening
-			//System.out.println(result.getBody());
-			//System.out.println(result.getStatusCodeValue());
+			String result = worldCheckCall(url, HttpMethod.POST, "", "");// screening
+			//System.out.println(result);
 
 			Thread.sleep(3000);
 
 			String urlCaseResult = String.format(WCConstant.CASE_RESULT, wcCaseid);
-			//System.out.println(url);
-			ResponseEntity<String> wcresult = worldCheckCall(urlCaseResult, HttpMethod.GET, "parameters");
-			System.out.println(wcresult.getBody());
-			JSONArray jsonArray = (JSONArray) parser.parse(wcresult.getBody());
+			// System.out.println(url);
+			String wcresult = worldCheckCall(urlCaseResult, HttpMethod.GET, "", "");
+			//System.out.println(wcresult);
+			JSONArray jsonArray = (JSONArray) parser.parse(wcresult);
 			@SuppressWarnings("unchecked")
 			Stream<JSONObject> stream = jsonArray.parallelStream();
 			List<WCHits> hits = new ArrayList<>();
-			//stream.filter(hit -> matchStrengthList.contains(hit.get("matchStrength").toString()))
-					//.forEach(p -> wcDiscountLogic(p, hits, yearLowerRange, yearUpperrange, natinality));
+
 			stream.forEach(p -> wcDiscountLogic(p, hits, yearLowerRange, yearUpperrange, natinality));
 			wcScreening.setWcStatus(wcStatus);
 			wcScreening.setWchits(hits);
@@ -141,54 +175,20 @@ public class WorldCheckServiceImpl implements WorldCheckService {
 		String json = "";
 		try {
 			json = mapper.writeValueAsString(customer);
-			//System.out.println(json);
+			System.out.println(json);
 		} catch (JsonProcessingException e) {
 			e.printStackTrace();
 		}
-		ResponseEntity<String> result = worldCheckCall(WCConstant.CASE, HttpMethod.POST, json);
-		return result.getBody();
+		String result = worldCheckCall(WCConstant.CASE, HttpMethod.POST, json, "");
+		return result;
 
 	}
-
-	/*
-	 * @Override public String getWCResult() { String saveresult = saveCase();
-	 * try { JSONObject responseCase = (JSONObject) parser.parse(saveresult);
-	 * String wcCaseid = (String) responseCase.get("caseSystemId"); String json
-	 * = ""; String url = String.format(WCConstant.SCREENCASE, wcCaseid);
-	 * ResponseEntity<String> result = worldCheckCall(url, HttpMethod.POST,
-	 * json);// screening System.out.println(result.getBody());
-	 * System.out.println(result.getStatusCodeValue());
-	 * 
-	 * Thread.sleep(4000);
-	 * 
-	 * String urlCaseResult = String.format(WCConstant.CASE_RESULT, wcCaseid);
-	 * System.out.println(url); ResponseEntity<String> wcresult =
-	 * worldCheckCall(urlCaseResult, HttpMethod.GET, "parameters");
-	 * System.out.println(wcresult.getBody()); JSONArray jsonArray = (JSONArray)
-	 * parser.parse(wcresult.getBody());
-	 * 
-	 * @SuppressWarnings("unchecked") Stream<JSONObject> stream =
-	 * jsonArray.parallelStream(); List<WCHits> hits = new ArrayList<>(); //
-	 * stream.filter(hit //
-	 * ->matchStrengthList.contains(hit.get("matchStrength").toString())).
-	 * forEach(p // -> wcDiscountLogic(p,hits)); stream.forEach(p ->
-	 * wcDiscountLogic(p, hits)); ObjectMapper objectMapper = new
-	 * ObjectMapper(); objectMapper.enable(SerializationFeature.INDENT_OUTPUT);
-	 * String arrayToJson = objectMapper.writeValueAsString(hits); return
-	 * arrayToJson;
-	 * 
-	 * } catch (org.json.simple.parser.ParseException e) { // TODO
-	 * Auto-generated catch block e.printStackTrace(); } catch
-	 * (InterruptedException e) { // TODO Auto-generated catch block
-	 * e.printStackTrace(); } catch (JsonProcessingException e) { // TODO
-	 * Auto-generated catch block e.printStackTrace(); } return saveresult; }
-	 */
 
 	private void wcDiscountLogic(final JSONObject record, List<WCHits> hits, int lowerRange, int upperRange,
 			String natinality) {
 
-		if(!matchStrengthList.contains(record.get("matchStrength").toString()))
-				return ;
+		if (!matchStrengthList.contains(record.get("matchStrength").toString()))
+			return;
 		String riskStatus = "Clean";
 		String reason = "";
 		WCHits hit = new WCHits();
@@ -199,7 +199,7 @@ public class WorldCheckServiceImpl implements WorldCheckService {
 		for (int i = 0; i < secondaryFieldResults.size(); i++) {
 			JSONObject obj = (JSONObject) secondaryFieldResults.get(i);
 			if (obj.get("typeId").toString().equalsIgnoreCase("SFCT_5")) {
-				Object nationality = obj.get("matchedDateTimeValue");
+				Object nationality = obj.get("matchedValue");
 				String nationalityString = (nationality != null) ? (String) nationality : "null";
 				hit.setNationality(nationalityString);
 			} else {
@@ -213,12 +213,12 @@ public class WorldCheckServiceImpl implements WorldCheckService {
 		if (hit.getMatchStrength().equalsIgnoreCase("EXACT")) {
 			riskStatus = "Referred";
 			reason = "match found";
-			wcStatus="Referred";
+			wcStatus = "Referred";
 		} else if ((hit.getNationality().equalsIgnoreCase("null") || hit.getNationality().equalsIgnoreCase(natinality))
 				&& (yearValue == 0 || (yearValue > lowerRange && yearValue < upperRange))) {
 			riskStatus = "Referred";
 			reason = "match found";
-			wcStatus="Referred";
+			wcStatus = "Referred";
 		}
 		hit.setRiskStatus(riskStatus);
 		hit.setReason(reason);
@@ -234,8 +234,6 @@ public class WorldCheckServiceImpl implements WorldCheckService {
 			Calendar c = Calendar.getInstance();
 			c.setTime(d);
 			yearvalue = c.get(Calendar.YEAR);
-			// year = String.valueOf(yearvalue);
-			// System.out.println(date +" ===>" + year);
 		} catch (ParseException e) {
 			e.printStackTrace();
 		}
@@ -244,82 +242,19 @@ public class WorldCheckServiceImpl implements WorldCheckService {
 
 	@Override
 	public String getGroups() {
-
-		ResponseEntity<String> result = worldCheckCall(WCConstant.GROUP_URL, HttpMethod.GET, "parameters");
-		//System.out.println(result.getBody());
-		return result.getBody();
+		return worldCheckCall(WCConstant.GROUP_URL, HttpMethod.GET, "", "");
 	}
 
 	@Override
 	public String getCountryCodes() {
-
-		ResponseEntity<String> result = worldCheckCall(WCConstant.COUNTRY_URL, HttpMethod.GET, "parameters");
-		//System.out.println(result.getBody());
-		return result.getBody();
+		return worldCheckCall(WCConstant.COUNTRY_URL, HttpMethod.GET, "", "");
 	}
 
-	@Override
-	public String getScreeningResult() {
-		String caseSystemId = "4d964e9f-b125-49b5-ab2c-72e575f9727c";
-		String url = String.format(WCConstant.CASE_RESULT, caseSystemId);
-		//System.out.println(url);
-		ResponseEntity<String> result = worldCheckCall(url, HttpMethod.GET, "parameters");
-		//System.out.println(result.getBody());
-		return result.getBody();
-	}
-
-	@Override
-	public String saveCase() {
-		WcCustomer customer = new WcCustomer();
-		customer.setCaseId("12345");
-		customer.setName("Jitendra Mishra");
-		customer.setEntityType("INDIVIDUAL");
-		customer.setGroupId("ba7f147f-cfbb-49c7-9e42-7ee9e5df62a8");
-		customer.setProviderTypes(new String[] { "WATCHLIST" });
-		customer.setCustomFields(new Field[] {});
-		DobField dob = new DobField();
-		dob.setTypeId("SFCT_2");
-		DateTimeValue dateTimeValue = new DateTimeValue();
-		dateTimeValue.setTimelinePrecision("ON");
-		dateTimeValue.setPointInTimePrecision("DAY");
-
-		NationalityField nationality = new NationalityField();
-		nationality.setTypeId("SFCT_5");
-		nationality.setValue("IND");
-		String json = "";
-		ObjectMapper mapper = new ObjectMapper();
-		try {
-			/*
-			 * SimpleDateFormat sdf = new SimpleDateFormat();
-			 * sdf.applyPattern("dd MMM yyyy HH:mm:ss z"); sdf.setTimeZone(new
-			 * SimpleTimeZone(0, "GMT"));
-			 */
-			String str = "1979-06-05";
-			/*
-			 * long epoch = (sdf.parse(str).getTime())/1000;
-			 * System.out.println(epoch);
-			 */
-			dateTimeValue.setUtcDateTime(str);
-			// dateTimeValue.setUtcDateTime("316310400000");
-			dob.setDateTimeValue(str);
-			customer.setSecondaryFields(new Field[] { dob, nationality });
-			json = mapper.writeValueAsString(customer);
-			//System.out.println(json);
-			//System.out.println(json.length());
-		} catch (JsonProcessingException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
-		ResponseEntity<String> result = worldCheckCall(WCConstant.CASE, HttpMethod.POST, json);
-		//System.out.println(result.getBody());
-		return result.getBody();
-	}
-
-	private ResponseEntity<String> worldCheckCall(String methodUrl, HttpMethod method, String body) {
+	private String worldCheckCall(String methodUrl, HttpMethod method, String body, String parameter) {
 
 		String getUri = WCConstant.HTTP_SCHEMA + config.getWorldcheckUrl() + WCConstant.PATH_SEPARATOR
-				+ WCConstant.BASE_PATH + WCConstant.PATH_SEPARATOR + methodUrl;
-		//System.out.println(getUri);
+				+ WCConstant.BASE_PATH + WCConstant.PATH_SEPARATOR + methodUrl + parameter;
+		// System.out.println(getUri);
 		HttpHeaders headers = new HttpHeaders();
 		headers.set("Host", config.getWorldcheckUrl());
 		headers.set("Port", "443");
@@ -336,7 +271,7 @@ public class WorldCheckServiceImpl implements WorldCheckService {
 		String dataToSign = "(request-target): " + method.name().toLowerCase() + " " + WCConstant.PATH_SEPARATOR
 				+ WCConstant.BASE_PATH + WCConstant.PATH_SEPARATOR + methodUrl + "\n" + "host: "
 				+ "rms-world-check-one-api-pilot.thomsonreuters.com" + "\n" + "date: " + date;
-		if (methodUrl.equalsIgnoreCase(WCConstant.CASE)) {
+		if (!body.isEmpty()) {
 			dataToSign = dataToSign + "\n" + "content-type: application/json" + "\n" + "content-length: "
 					+ body.length() + "\n" + body;
 			authorisation = authorisation + " content-type content-length";
@@ -346,13 +281,23 @@ public class WorldCheckServiceImpl implements WorldCheckService {
 		String hmac = generateAuthHeader(dataToSign);
 
 		authorisation = authorisation + "\",signature=\"" + hmac + "\"";
-		//System.out.println(authorisation);
+		// System.out.println(authorisation);
 		headers.set("Date", date);
 		headers.set("Authorization", authorisation);
 		HttpEntity<String> entity = new HttpEntity<String>(body, headers);
-
+		ResponseEntity<String> result = null;
 		RestTemplate restTemplate = new RestTemplate();
-		return restTemplate.exchange(getUri, method, entity, String.class);
+		try {
+			result = restTemplate.exchange(getUri, method, entity, String.class);
+		} catch (HttpClientErrorException ex) {
+			if (ex.getStatusCode() == HttpStatus.NOT_FOUND) {
+				return WCConstant.NOT_FOUND;
+			}
+			throw ex;
+		} catch (RestClientException e) {
+			throw e;
+		}
+		return result.getBody();
 	}
 
 	private static String generateAuthHeader(String dataToSign) {
@@ -367,7 +312,7 @@ public class WorldCheckServiceImpl implements WorldCheckService {
 			sha256_HMAC.init(secret_key);
 
 			hash = Base64.encodeBase64String(sha256_HMAC.doFinal(message.getBytes()));
-			//System.out.println(hash);
+			// System.out.println(hash);
 		} catch (Exception e) {
 			System.out.println("Error");
 		}
@@ -384,8 +329,20 @@ public class WorldCheckServiceImpl implements WorldCheckService {
 		 * cal.add(Calendar.MINUTE, 1); return sdf.format(cal.getTime());
 		 */
 		String s = sdf.format(testDate);
-		//System.out.println(s);
+		// System.out.println(s);
 		return s;
+	}
+
+	@Override
+	public String caseIdentifiers(String customerId) {
+		String url = WCConstant.CASE_IDENTIFIERS;
+		return worldCheckCall(url, HttpMethod.HEAD, "", "?caseId=" + customerId);
+	}
+
+	@Override
+	public String caseReferences(String customerId) {
+		String url = WCConstant.CASE_REFERENCES;
+		return worldCheckCall(url, HttpMethod.GET, "", "?caseId=" + customerId);
 	}
 
 }
