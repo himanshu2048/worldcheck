@@ -7,14 +7,13 @@ import com.hsbc.stp.domain.CustomerRequest;
 public interface WorldCheckService {
 
 	String getGroups();
-	
+
 	String getCountryCodes();
-	
-	String getScreeningResult();
-	
-	String saveCase();
-	
-	//String getWCResult();
-	
+
 	String getWCResultByCustomer(CustomerRequest customer) throws ParseException;
+
+	String caseIdentifiers(String customerId);
+
+	String caseReferences(String customerId);
+
 }
