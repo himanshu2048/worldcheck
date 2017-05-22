@@ -60,6 +60,8 @@ public class WorldCheckServiceImpl implements WorldCheckService {
 	private SimpleDateFormat yearFormat = new SimpleDateFormat("yyyy");
 
 	private String wcStatus = "Clean";
+	
+	private static String userId="";
 
 	WorldCheckServiceImpl() {
 		matchStrengthList.add("EXACT");
@@ -116,6 +118,11 @@ public class WorldCheckServiceImpl implements WorldCheckService {
 			}
 
 			JSONObject responseCase = (JSONObject) parser.parse(saveResult);
+			if(userId.isEmpty())
+			{
+				JSONObject creator=(JSONObject)responseCase.get("creator");
+				userId=(String)creator.get("userId");
+			}			
 			String wcCaseid = (String) responseCase.get("caseSystemId");
 			System.out.println("wcCaseid======>" + wcCaseid);
 			String modificationDate = (String) responseCase.get("modificationDate");
@@ -380,8 +387,8 @@ public class WorldCheckServiceImpl implements WorldCheckService {
 	@Override
 	public String audtiEvent(String caseSystemId) {
 		String body = "{\"query\" : \"actionType==SCREENED_CASE;" + "actionedByUserId=="
-				+ "d15f4c7a-018b-4aa8-b65d-3d0e0b33fa78;"
-				+ "eventDate>2010-01-01T00:00:00Z;eventDate<2020-01-01T00:00:00Z\" }";
+				+ userId + ";"
+				+ "eventDate>2010-01-01T00:00:00Z;eventDate<2017-09-09T00:00:00Z\" }";
 
 		String url = WCConstant.AUDIT_EVENT + caseSystemId + "/auditEvents";
 		String auditEventResult= worldCheckCall(url, HttpMethod.POST, body, "");
