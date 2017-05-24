@@ -1,5 +1,8 @@
 package com.hsbc.stp.service;
 
+import java.io.File;
+import java.io.FileReader;
+import java.io.IOException;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -8,6 +11,7 @@ import java.util.Calendar;
 import java.util.Date;
 import java.util.List;
 import java.util.SimpleTimeZone;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 import javax.crypto.Mac;
@@ -60,8 +64,8 @@ public class WorldCheckServiceImpl implements WorldCheckService {
 	private SimpleDateFormat yearFormat = new SimpleDateFormat("yyyy");
 
 	private String wcStatus = "Clean";
-	
-	private static String userId="";
+
+	private static String userId = "";
 
 	WorldCheckServiceImpl() {
 		matchStrengthList.add("EXACT");
@@ -118,11 +122,10 @@ public class WorldCheckServiceImpl implements WorldCheckService {
 			}
 
 			JSONObject responseCase = (JSONObject) parser.parse(saveResult);
-			if(userId.isEmpty())
-			{
-				JSONObject creator=(JSONObject)responseCase.get("creator");
-				userId=(String)creator.get("userId");
-			}			
+			if (userId.isEmpty()) {
+				JSONObject creator = (JSONObject) responseCase.get("creator");
+				userId = (String) creator.get("userId");
+			}
 			String wcCaseid = (String) responseCase.get("caseSystemId");
 			System.out.println("wcCaseid======>" + wcCaseid);
 			String modificationDate = (String) responseCase.get("modificationDate");
@@ -131,7 +134,7 @@ public class WorldCheckServiceImpl implements WorldCheckService {
 			String result = worldCheckCall(url, HttpMethod.POST, "", "");// screening
 			System.out.println(result);
 
-			String wcresult=getScreeningResult(wcCaseid);
+			String wcresult = getScreeningResult(wcCaseid);
 			JSONArray jsonArray = (JSONArray) parser.parse(wcresult);
 			@SuppressWarnings("unchecked")
 			Stream<JSONObject> stream = jsonArray.parallelStream();
@@ -152,8 +155,7 @@ public class WorldCheckServiceImpl implements WorldCheckService {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		} catch (Exception e) {
-			if(e.getMessage().equalsIgnoreCase("Time Out"))
-			{
+			if (e.getMessage().equalsIgnoreCase("Time Out")) {
 				return e.getMessage();
 			}
 		}
@@ -165,48 +167,40 @@ public class WorldCheckServiceImpl implements WorldCheckService {
 			Thread.sleep(3000);
 			String auditevent = audtiEvent(wcCaseid);
 			JSONObject jsonObject = (JSONObject) parser.parse(auditevent);
-			JSONArray jsonArray=(JSONArray) jsonObject.get("results");
-			if(!jsonArray.isEmpty())
-			{
-				JSONObject resultEvent=(JSONObject) jsonArray.get(0);
-				JSONObject resultDetails=(JSONObject) resultEvent.get("details");
-				String status=(String)resultDetails.get("statusCode");
+			JSONArray jsonArray = (JSONArray) jsonObject.get("results");
+			if (!jsonArray.isEmpty()) {
+				JSONObject resultEvent = (JSONObject) jsonArray.get(0);
+				JSONObject resultDetails = (JSONObject) resultEvent.get("details");
+				String status = (String) resultDetails.get("statusCode");
 				System.out.println(status);
-				if(status.equalsIgnoreCase("COMPLETED"))
-				{
+				if (status.equalsIgnoreCase("COMPLETED")) {
 					String urlCaseResult = String.format(WCConstant.CASE_RESULT, wcCaseid);
 					String wcresult = worldCheckCall(urlCaseResult, HttpMethod.GET, "", "");
 					System.out.println(wcresult);
 					return wcresult;
 				}
-			}
-			else
-			{
+			} else {
 				Thread.sleep(30000);
 				String auditeventNext = audtiEvent(wcCaseid);
 				JSONObject jsonObjectNext = (JSONObject) parser.parse(auditeventNext);
-				JSONArray jsonArrayNext=(JSONArray) jsonObjectNext.get("results");
-				if(!jsonArrayNext.isEmpty())
-				{
-					JSONObject resultEventNext=(JSONObject) jsonArrayNext.get(0);
-					JSONObject resultDetailsNext=(JSONObject) resultEventNext.get("details");
-					String statusNext=(String)resultDetailsNext.get("statusCode");
+				JSONArray jsonArrayNext = (JSONArray) jsonObjectNext.get("results");
+				if (!jsonArrayNext.isEmpty()) {
+					JSONObject resultEventNext = (JSONObject) jsonArrayNext.get(0);
+					JSONObject resultDetailsNext = (JSONObject) resultEventNext.get("details");
+					String statusNext = (String) resultDetailsNext.get("statusCode");
 					System.out.println(statusNext);
-					if(statusNext.equalsIgnoreCase("COMPLETED"))
-					{
+					if (statusNext.equalsIgnoreCase("COMPLETED")) {
 						String urlCaseResult = String.format(WCConstant.CASE_RESULT, wcCaseid);
 						String wcresult = worldCheckCall(urlCaseResult, HttpMethod.GET, "", "");
 						System.out.println(wcresult);
 						return wcresult;
-					}
-					else
-					{
+					} else {
 						System.out.println("Time Out");
 						throw new Exception("Time Out");
 					}
 				}
 			}
-			
+
 		} catch (InterruptedException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
@@ -386,13 +380,72 @@ public class WorldCheckServiceImpl implements WorldCheckService {
 
 	@Override
 	public String audtiEvent(String caseSystemId) {
-		String body = "{\"query\" : \"actionType==SCREENED_CASE;" + "actionedByUserId=="
-				+ userId + ";"
+		String body = "{\"query\" : \"actionType==SCREENED_CASE;" + "actionedByUserId==" + userId + ";"
 				+ "eventDate>2010-01-01T00:00:00Z;eventDate<2017-09-09T00:00:00Z\" }";
 
 		String url = WCConstant.AUDIT_EVENT + caseSystemId + "/auditEvents";
-		String auditEventResult= worldCheckCall(url, HttpMethod.POST, body, "");
-		System.out.println("auditEventResult  ==>"+auditEventResult);
+		String auditEventResult = worldCheckCall(url, HttpMethod.POST, body, "");
+		System.out.println("auditEventResult  ==>" + auditEventResult);
 		return auditEventResult;
 	}
+
+	@Override
+	public String getProfiles(String profileId) {
+		return worldCheckCall(WCConstant.PROFILE_URL + profileId, HttpMethod.GET, "", "");
+	}
+
+	@Override
+	public String getWorldCheckData() {
+
+		// JSONParser parser = new JSONParser();
+
+		Pattern pattern = Pattern.compile("^[a-zA-Z]+$.,;:'\"");
+		StringBuffer result = new StringBuffer();
+		int countHit = 0;
+		int actualHit = 0;
+		try {
+			JSONArray jsonArray = (JSONArray) parser.parse(new FileReader(new File("C:\\jitendra\\wctestdata.txt")));
+			for (Object obj : jsonArray) {
+				JSONObject objJson = (JSONObject) obj;
+
+				String matchStrength = (String) objJson.get("matchStrength");
+				if (matchStrength.equalsIgnoreCase("EXACT") || matchStrength.equalsIgnoreCase("STRONG")) {
+					countHit++;
+					// System.out.println(objJson + ",");
+					String name = (String) objJson.get("matchedTerm");
+					boolean flag = pattern.matcher(name).find();
+					if (!flag) {
+						String profileId = (String) objJson.get("referenceId");
+						
+						String profile = getProfiles(profileId);
+						JSONObject profileObject=(JSONObject)parser.parse(profile);
+						JSONArray names=(JSONArray)profileObject.get("names");
+						for(Object nameObj: names)
+						{
+							String nameEng="";
+							JSONObject nameJson=(JSONObject)nameObj;
+							if(nameJson.get("type").toString().equalsIgnoreCase("PRIMARY"))
+							{
+								nameEng=(String)nameJson.get("fullName");
+								break;
+							}						
+							result.append("referenceId ==>" + profileId + " matchedTerm ===>" + name + "english name ====>" + nameEng);
+						}
+						
+					}
+				}
+				actualHit++;
+			}
+			result.append("actualHit======>" + actualHit + " countHit ====>" + countHit);
+			System.out.println(result);
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (org.json.simple.parser.ParseException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		return result.toString();
+	}
+
 }
